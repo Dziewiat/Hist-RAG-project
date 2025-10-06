@@ -1,0 +1,9 @@
+data
+raw_embeddings
+.venv
+*.db
+*.csv
+*.parquet
+*.faiss
+output
+*.jpg
