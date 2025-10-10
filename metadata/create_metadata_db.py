@@ -32,3 +32,5 @@ if __name__ == "__main__":
     # Store in SQLite
     conn = sqlite3.connect("metadata/metadata.db")
     metadata_df.to_sql("patches", conn, if_exists="replace", index=False)
+
+    print(metadata_df["TCGA Participant Barcode"].unique())

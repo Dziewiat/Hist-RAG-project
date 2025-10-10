@@ -16,6 +16,12 @@ def search_faiss(
         k: top k similar vectors to be returned
         subset: an optional list of embedding indices to search through (returned from metadata filtering)
     """
+    INDEX_FILEPATH = "faiss_search/faiss_indecies/uni2h_index.faiss"
+    
+    # Load pregenerated faiss index
+    print("Loading faiss index...")
+    index = faiss.read_index(INDEX_FILEPATH)
+
     # Normalize query vector
     query = query_vector.astype("float32").reshape(1, -1)
     faiss.normalize_L2(query)
@@ -98,10 +104,6 @@ if __name__ == "__main__":
     subset = None
     if filters:
         subset = metadata.faiss_index.to_list()
-
-    # Load pregenerated faiss index
-    print("Loading faiss index...")
-    index = faiss.read_index(INDEX_FILEPATH)
 
     # Simulate query vector
     D = 1536
