@@ -5,5 +5,6 @@ raw_embeddings
 *.parquet
 output
 *.jpg
-models
+models/UNI2-h
 __pycache__
+*.bin

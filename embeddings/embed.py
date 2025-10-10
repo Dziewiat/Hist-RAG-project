@@ -6,6 +6,7 @@ import numpy as np
 from PIL import Image
 from timm.data import resolve_data_config
 from timm.data.transforms_factory import create_transform
+from models.utils import download_UNI2h
 
 
 def load_UNI2h() -> torch.nn.Module:
@@ -13,6 +14,10 @@ def load_UNI2h() -> torch.nn.Module:
     Load UNI2-h pytorch model from local files.
     """
     local_model_dir = "models/UNI2-h"
+    weights_path = os.path.join(local_model_dir, "pytorch_model.bin")
+
+    if not os.path.exists(weights_path):
+        download_UNI2h()
 
     timm_kwargs = {
         'img_size': 224,
@@ -30,22 +35,21 @@ def load_UNI2h() -> torch.nn.Module:
         'dynamic_img_size': True,
     }
 
-    # ============================================================
-    # 4️⃣ Create model and load local weights
-    # ============================================================
     # Create model with same architecture (no pretrained weights from HF)
-    print("Loading UNI2-h model architecture...")
-    model = timm.create_model('vit_giant_patch14_224', pretrained=False, **timm_kwargs)
+    print(f"Loading UNI2-h model weights from '{weights_path}'...")
+    model = timm.create_model(
+        'vit_giant_patch14_224',
+        pretrained=False, 
+        checkpoint_path=weights_path,
+        **timm_kwargs
+    )
 
-    # Load downloaded weights
-    print("Loading UNI2-h model weights...")
-    weights_path = os.path.join(local_model_dir, "pytorch_model.bin")
-    state_dict = torch.load(weights_path, map_location="cpu")
-    model.load_state_dict(state_dict)
+    # # Load downloaded weights
+    # print("Loading UNI2-h model weights...")
+    # weights_path = os.path.join(local_model_dir, "pytorch_model.bin")
+    # state_dict = torch.load(weights_path, map_location="cpu")
+    # model.load_state_dict(state_dict)
 
-    # ============================================================
-    # 5️⃣ Setup transform and device
-    # ============================================================
     transform = create_transform(**resolve_data_config(model.pretrained_cfg, model=model))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
