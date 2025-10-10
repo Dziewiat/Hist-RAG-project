@@ -2,6 +2,7 @@ import numpy as np
 import faiss
 import sqlite3
 import pandas as pd
+import time
 
 
 def search_faiss(
@@ -45,11 +46,12 @@ def search_faiss(
 
 def metadata_sql_query_constructor(
         filters: None | dict[str: list[str]],
+        table: str = "patients"
 ) -> str:
     """
     Construct an SQL query for loading selected data samples from metadata SQL database.
     """
-    sql_query = """SELECT * FROM patches"""
+    sql_query = f"""SELECT * FROM {table}"""
 
     if filters:
         conditions = []
@@ -70,55 +72,72 @@ def metadata_sql_query_constructor(
         return sql_query
 
 
-def get_patch_metadata(
+def get_metadata(
         filters: None | dict
 ) -> pd.DataFrame:
-
+    """Returns filtered patient and patch metadata."""
     # Load patch metadata database
     print("Connecting to patch metadata db...")
     conn = sqlite3.connect("metadata/metadata.db")
 
-    # Filter metadata
+    # print(f"Metadata collection time: {end-start}s")
     print("Reading metadata...")   # TIGHT PASSAGE
-    sql_query = metadata_sql_query_constructor(filters)
-    metadata = pd.read_sql(sql_query, conn)
+
+    # Filter patient metadata
+    patients_query = metadata_sql_query_constructor(filters, "patients")
+    patient_metadata = pd.read_sql(patients_query, conn)
+    patient_ids = ", ".join([f"'{pid}'" for pid in patient_metadata["TCGA_Participant_Barcode"].to_list()])
+
+    # Filter patch metadata by patient id
+    patch_metadata = pd.read_sql(f"SELECT * FROM patches WHERE patient_id IN ({patient_ids})", conn)
+
+    conn.close()
     
-    return metadata
+    return patient_metadata, patch_metadata
 
 
-if __name__ == "__main__":
-
-    # Default variables
-    INDEX_FILEPATH = "faiss_search/faiss_indecies/uni2h_index.faiss"
-
-    # Filter metadata
-    filters = {
-        "Organ": ["Esophageal", "COAD"],
-        "Gender": ["MALE"]
-    }
-    # filters = None
-
-    metadata = get_patch_metadata(filters)
+def get_most_similar_patches(
+        query_vec: np.ndarray,
+        filters: None | dict,
+        n_patients: int = 5,
+        n_patches: int = 2,
+) -> pd.DataFrame:
+    """Search faiss iteratively excluding top patients. User can choose number of top patients and number of patches per patient."""
+    # Get filtered patient metadata
+    patient_metadata, patch_metadata = get_metadata(filters)
 
     # In case of filtering prepare a subset of indecies for prefiltering the faiss index
     subset = None
     if filters:
-        subset = metadata.faiss_index.to_list()
+        subset = patch_metadata.faiss_index.to_list()
 
-    # Simulate query vector
-    D = 1536
-    query_vec = np.ones(D)
-    k = 5
+    # Initiate indices collection
+    all_indices = []
+    all_distances = []
 
-    # Perform similarity search within the faiss index
-    print("Searching faiss...")
-    indices, distances = search_faiss(query_vec, k=k, subset=subset)
+    search_metadata = patch_metadata[["faiss_index", "patient_id"]].copy()
+
+    for i in range(n_patients):
+        # Perform similarity search within the faiss index
+        print(f"Searching faiss for patient {i+1}...")
+        indices, distances = search_faiss(query_vec, k=n_patches, subset=subset)
+
+        all_indices.extend(indices)
+        all_distances.extend(distances)
+
+        # Exclude top patients
+        top_patients = search_metadata.loc[search_metadata.faiss_index.isin(indices), "patient_id"]
+        search_metadata = search_metadata.loc[-search_metadata.patient_id.isin(top_patients)]
+
+        # Create new subset without excluded patients
+        subset = search_metadata.faiss_index.to_list()
 
     # Convert to DataFrame
-    results = pd.DataFrame({"id": indices, "score": distances})
-
+    results = pd.DataFrame({"id": all_indices, "score": all_distances})
     print("Collecting metadata...")
+    
     # Join with metadata
-    results = results.merge(metadata, left_on="id", right_on="faiss_index", how="left")
-    print(f"Top {k} vectors similar to the query:\n")
-    print(results)
+    results = results.merge(patch_metadata, left_on="id", right_on="faiss_index", how="left")
+    results = results.merge(patient_metadata, left_on="patient_id", right_on="TCGA_Participant_Barcode", how="left")
+
+    return results
