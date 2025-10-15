@@ -19,7 +19,7 @@ if __name__ == "__main__":
         "Organ": ["Esophageal", "COAD"],
         "Gender": ["MALE"]
     }
-    # FILTERS = None
+    FILTERS = None
 
     # Get query patch embedding
     query_vec = get_UNI2h_patch_embedding(IMG_PATH)

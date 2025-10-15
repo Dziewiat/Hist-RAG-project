@@ -5,6 +5,17 @@ import pandas as pd
 import time
 
 
+def measure_execution_time(func):
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        result = func(*args, **kwargs)
+        end_time = time.time()
+        execution_time = end_time - start_time
+        print(f"Function {func.__name__} took {execution_time:.4f} seconds to execute")
+        return result
+    return wrapper
+
+
 def search_faiss(
         query_vector: np.array,
         k: int = 5,
@@ -72,6 +83,7 @@ def metadata_sql_query_constructor(
         return sql_query
 
 
+@measure_execution_time
 def get_metadata(
         filters: None | dict
 ) -> pd.DataFrame:
@@ -92,6 +104,53 @@ def get_metadata(
     patch_metadata = pd.read_sql(f"SELECT * FROM patches WHERE patient_id IN ({patient_ids})", conn)
 
     conn.close()
+    
+    return patient_metadata, patch_metadata
+
+
+def metadata_pandas_query_constructor(
+        filters: None | dict[str: list[str]],
+) -> str:
+    """
+    Construct an pandas query for loading selected data samples from pandas database.
+    """
+    if filters:
+        conditions = []
+    
+        for column, values in filters.items():
+            subconditions = []
+            for value in values:
+                subcondition = f"{column} == '{value}'"
+                subconditions.append(subcondition)
+            conditions.append(" or ".join(subconditions))
+    
+        conditions = "(" + ') and ('.join(conditions) + ")"
+        
+        return conditions
+    else:
+        return None
+    
+
+@measure_execution_time
+def get_metadata(  # BEST FOR NOW
+        filters: None | dict
+) -> pd.DataFrame:
+    """Returns filtered patient and patch metadata."""
+    # Load patch metadata database
+    print("Reading metadata...")   # TIGHT PASSAGE
+
+    # Filter patient metadata
+    print("Filtering patient metadata...")
+    patient_metadata = pd.read_csv("metadata/liu.csv")
+    patient_metadata.columns = [col.replace(" ", "_") for col in patient_metadata.columns]
+    if filters:
+        patient_metadata = patient_metadata.query(metadata_pandas_query_constructor(filters))
+    patient_ids = patient_metadata["TCGA_Participant_Barcode"].to_list()
+
+    # Filter patch metadata by patient id
+    print("Getting patch metadata...")
+    patch_metadata = pd.read_parquet("metadata/patch_metadata.parquet")
+    patch_metadata = patch_metadata[patch_metadata.patient_id.isin(patient_ids)]
     
     return patient_metadata, patch_metadata
 

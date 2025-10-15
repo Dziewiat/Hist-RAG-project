@@ -14,10 +14,10 @@ if __name__ == "__main__":
     print(patch_metadata_df)
     print(patient_metadata_df)
 
-    # Create patient metadata db
+    # # Create patient metadata db
     patient_metadata_df.columns = [col.replace(" ", "_") for col in patient_metadata_df.columns]
-    conn = sqlite3.connect("metadata/metadata.db")
-    patient_metadata_df.to_sql("patients", conn, if_exists="replace", index=False)
+    # conn = sqlite3.connect("metadata/metadata.db")
+    # patient_metadata_df.to_sql("patients", conn, if_exists="replace", index=False)
 
     # Create metadata DataFrame
     metadata_df = patch_metadata_df.copy()
@@ -29,13 +29,15 @@ if __name__ == "__main__":
     metadata_df["patient_id"] = metadata_df["slide"].str[:12]
     metadata_df.drop(columns="MSI_status", inplace=True)
 
-    # # Add patient metadata
-    # metadata_columns = ["TCGA Participant Barcode","TCGA Project Code", "Organ", "Pathologic Stage", "Gender", "Race"]
-    # metadata_df = pd.merge(metadata_df, patient_metadata_df[metadata_columns], how='left', left_on="patient_id", right_on="TCGA Participant Barcode")
+    metadata_df.to_parquet("metadata/patch_metadata.parquet")
 
-    print(metadata_df)
+    # # # Add patient metadata
+    # metadata_columns = ["TCGA_Participant_Barcode","TCGA_Project_Code", "Organ", "Pathologic_Stage", "Gender", "Race"]
+    # metadata_df = pd.merge(metadata_df, patient_metadata_df[metadata_columns], how='left', left_on="patient_id", right_on="TCGA_Participant_Barcode")
 
-    # Store patch metadata in SQLite
-    metadata_df.to_sql("patches", conn, if_exists="replace", index=False)
+    # print(metadata_df)
 
-    conn.close()
+    # # Store patch metadata in SQLite
+    # metadata_df.to_sql("patches", conn, if_exists="replace", index=False)
+
+    # conn.close()

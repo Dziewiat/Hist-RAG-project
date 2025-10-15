@@ -1,10 +1,9 @@
 data
 raw_embeddings
 .venv
-*.csv
-*.parquet
 output
 *.jpg
 models/UNI2-h
 __pycache__
 *.bin
+*.db
