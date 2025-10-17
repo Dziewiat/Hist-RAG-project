@@ -17,7 +17,7 @@ def load_UNI2h() -> torch.nn.Module:
     weights_path = os.path.join(local_model_dir, "pytorch_model.bin")
 
     if not os.path.exists(weights_path):
-        download_UNI2h()
+        download_UNI2h(local_model_dir)
 
     timm_kwargs = {
         'img_size': 224,
@@ -55,7 +55,7 @@ def load_UNI2h() -> torch.nn.Module:
     model.to(device)
     model.eval()
 
-    print("✅ Model ready (loaded locally from:", local_model_dir, ")")
+    print(f"✅ Model ready (loaded locally from: '{local_model_dir}')")
 
     return model, transform
 
