@@ -18,6 +18,7 @@ def measure_execution_time(func):
 
 def search_faiss(
         query_vector: np.array,
+        index: faiss.IndexIVFPQ,
         k: int = 5,
         subset: None | list[int] = None,
 ) -> tuple[list[float], list[float]]:
@@ -28,12 +29,6 @@ def search_faiss(
         k: top k similar vectors to be returned
         subset: an optional list of embedding indices to search through (returned from metadata filtering)
     """
-    INDEX_FILEPATH = "faiss_search/faiss_indecies/uni2h_index.faiss"
-    
-    # Load pregenerated faiss index
-    print("Loading faiss index...")
-    index = faiss.read_index(INDEX_FILEPATH)
-
     # Normalize query vector
     query = query_vector.astype("float32").reshape(1, -1)
     faiss.normalize_L2(query)
@@ -43,6 +38,7 @@ def search_faiss(
         # Optional: filter the index
         id_selector = faiss.IDSelectorArray(subset)
         search_parameters = faiss.IVFPQSearchParameters(sel=id_selector)
+        
         # Perform the similarity search with selected indices
         distances, indices = index.search(query, k, params=search_parameters)
     else:
@@ -55,82 +51,60 @@ def search_faiss(
     return indices, distances
 
 
-def metadata_sql_query_constructor(
-        filters: None | dict[str: list[str]],
-        table: str = "patients"
-) -> str:
-    """
-    Construct an SQL query for loading selected data samples from metadata SQL database.
-    """
-    sql_query = f"""SELECT * FROM {table}"""
+# def metadata_sql_query_constructor(
+#         filters: None | dict[str: list[str]],
+#         table: str = "patients"
+# ) -> str:
+#     """
+#     Construct an SQL query for loading selected data samples from metadata SQL database.
+#     """
+#     sql_query = f"""SELECT * FROM {table}"""
 
-    if filters:
-        conditions = []
+#     if filters:
+#         conditions = []
     
-        for column, values in filters.items():
-            subconditions = []
-            for value in values:
-                subcondition = f"{column} = '{value}'"
-                subconditions.append(subcondition)
-            conditions.append(" OR ".join(subconditions))
+#         for column, values in filters.items():
+#             subconditions = []
+#             for value in values:
+#                 subcondition = f"{column} = '{value}'"
+#                 subconditions.append(subcondition)
+#             conditions.append(" OR ".join(subconditions))
     
-        conditions = f"({') AND ('.join(conditions)})"
+#         conditions = f"({') AND ('.join(conditions)})"
 
-        sql_query += " WHERE {conditions}"
+#         sql_query += " WHERE {conditions}"
         
-        return sql_query.format(conditions=conditions)
-    else:
-        return sql_query
+#         return sql_query.format(conditions=conditions)
+#     else:
+#         return sql_query
 
 
-@measure_execution_time
-def get_metadata(
-        filters: None | dict
-) -> pd.DataFrame:
-    """Returns filtered patient and patch metadata."""
-    # Load patch metadata database
-    print("Connecting to patch metadata db...")
-    conn = sqlite3.connect("metadata/metadata.db")
+# @measure_execution_time
+# def get_metadata(
+#         filters: None | dict
+# ) -> pd.DataFrame:
+#     """Returns filtered patient and patch metadata."""
+#     # Load patch metadata database
+#     print("Connecting to patch metadata db...")
+#     conn = sqlite3.connect("metadata/metadata.db")
 
-    # print(f"Metadata collection time: {end-start}s")
-    print("Reading metadata...")   # TIGHT PASSAGE
+#     # print(f"Metadata collection time: {end-start}s")
+#     print("Reading metadata...")   # TIGHT PASSAGE
 
-    # Filter patient metadata
-    patients_query = metadata_sql_query_constructor(filters, "patients")
-    patient_metadata = pd.read_sql(patients_query, conn)
-    patient_ids = ", ".join([f"'{pid}'" for pid in patient_metadata["TCGA_Participant_Barcode"].to_list()])
+#     # Filter patient metadata
+#     patients_query = metadata_sql_query_constructor(filters, "patients")
+#     patient_metadata = pd.read_sql(patients_query, conn)
+#     patient_ids = ", ".join([f"'{pid}'" for pid in patient_metadata["TCGA_Participant_Barcode"].to_list()])
 
-    # Filter patch metadata by patient id
-    patch_metadata = pd.read_sql(f"SELECT * FROM patches WHERE patient_id IN ({patient_ids})", conn)
+#     # Filter patch metadata by patient id
+#     patch_metadata = pd.read_sql(f"SELECT * FROM patches WHERE patient_id IN ({patient_ids})", conn)
 
-    conn.close()
+#     conn.close()
     
-    return patient_metadata, patch_metadata
-
-
-def metadata_pandas_query_constructor(
-        filters: None | dict[str: list[str]],
-) -> str:
-    """
-    Construct an pandas query for loading selected data samples from pandas database.
-    """
-    if filters:
-        conditions = []
-    
-        for column, values in filters.items():
-            subconditions = []
-            for value in values:
-                subcondition = f"{column} == '{value}'"
-                subconditions.append(subcondition)
-            conditions.append(" or ".join(subconditions))
-    
-        conditions = "(" + ') and ('.join(conditions) + ")"
-        
-        return conditions
-    else:
-        return None
+#     return patient_metadata, patch_metadata
     
 
+# Pandas version (in RAM search)
 @measure_execution_time
 def get_metadata(  # BEST FOR NOW
         filters: None | dict
@@ -142,10 +116,9 @@ def get_metadata(  # BEST FOR NOW
     # Filter patient metadata
     print("Filtering patient metadata...")
     patient_metadata = pd.read_csv("metadata/liu.csv")
-    patient_metadata.columns = [col.replace(" ", "_") for col in patient_metadata.columns]
     if filters:
-        patient_metadata = patient_metadata.query(metadata_pandas_query_constructor(filters))
-    patient_ids = patient_metadata["TCGA_Participant_Barcode"].to_list()
+        patient_metadata = patient_metadata.loc[patient_metadata.isin(filters).sum(axis=1) == len(filters)]
+    patient_ids = patient_metadata["TCGA Participant Barcode"].to_list()
 
     # Filter patch metadata by patient id
     print("Getting patch metadata...")
@@ -159,9 +132,14 @@ def get_most_similar_patches(
         query_vec: np.ndarray,
         filters: None | dict,
         n_patients: int = 5,
-        n_patches: int = 2,
+        n_patches: int = 5,
+        index_filepath: str = "faiss_search/faiss_indecies/uni2h_index.faiss",
 ) -> pd.DataFrame:
     """Search faiss iteratively excluding top patients. User can choose number of top patients and number of patches per patient."""
+    # Load pregenerated faiss index
+    print("Loading faiss index...")
+    index = faiss.read_index(index_filepath)
+
     # Get filtered patient metadata
     patient_metadata, patch_metadata = get_metadata(filters)
 
@@ -174,22 +152,39 @@ def get_most_similar_patches(
     all_indices = []
     all_distances = []
 
+    patients = set([])
+    i = 0
+
     search_metadata = patch_metadata[["faiss_index", "patient_id"]].copy()
 
-    for i in range(n_patients):
+    for _ in range(n_patients):
         # Perform similarity search within the faiss index
         print(f"Searching faiss for patient {i+1}...")
-        indices, distances = search_faiss(query_vec, k=n_patches, subset=subset)
+        if not subset:
+            break
+        indices, distances = search_faiss(query_vec, index, k=n_patches, subset=subset)
 
         all_indices.extend(indices)
         all_distances.extend(distances)
 
         # Exclude top patients
-        top_patients = search_metadata.loc[search_metadata.faiss_index.isin(indices), "patient_id"]
+        top_patients = set(search_metadata.loc[search_metadata.faiss_index.isin(indices), "patient_id"].unique())
         search_metadata = search_metadata.loc[-search_metadata.patient_id.isin(top_patients)]
+
+        # Add collected patients
+        for patient in top_patients:
+            patients.add(patient)
+            i += 1
+            print(f"Found patient {i}: '{patient}'")
 
         # Create new subset without excluded patients
         subset = search_metadata.faiss_index.to_list()
+
+        # Break when no more similar patients are found or max amount of patients was found
+        if -1 in indices or len(patients) >= n_patients:
+            break
+    
+    print(f"Found {len(patients)} patients")
 
     # Convert to DataFrame
     results = pd.DataFrame({"id": all_indices, "score": all_distances})
@@ -197,6 +192,9 @@ def get_most_similar_patches(
     
     # Join with metadata
     results = results.merge(patch_metadata, left_on="id", right_on="faiss_index", how="left")
-    results = results.merge(patient_metadata, left_on="patient_id", right_on="TCGA_Participant_Barcode", how="left")
+    results = results.loc[results["id"] != -1]  # Drop unfound indecies
+    top_n_patients = results.sort_values("score", ascending=True).patient_id.drop_duplicates().iloc[:n_patients]  # Find top n patients by scores
+    results = results.loc[results["patient_id"].isin(top_n_patients)]  # Drop worst patients
+    results = results.merge(patient_metadata, left_on="patient_id", right_on="TCGA Participant Barcode", how="left")
 
     return results

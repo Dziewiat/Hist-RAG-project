@@ -1,0 +1,116 @@
+import requests
+import os
+import pandas as pd
+import shutil
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from io import BytesIO
+
+
+def get_filename_to_id_mapping(
+        mapping_filename: str = "retrieval/data/patch_name_to_drive_id_mapping.parquet"
+) -> pd.Series:
+    """Load patch name to Google Drive file id mapping as pd.Series."""
+    mapping = pd.read_parquet(mapping_filename).set_index("filename")
+    return mapping["file_id"]
+
+
+def get_patch_urls(
+        patch_filenames: list[str],
+        mapping_filename: str = "retrieval/data/patch_name_to_drive_id_mapping.parquet"
+) -> list[str]:
+    """Fucntion returning an URL to download a patch from the database based on patch_filename."""
+    # Get filename to Google Drive ID mapping
+    mapping = get_filename_to_id_mapping(mapping_filename)
+
+    # Template for downloading a photo from Google Drive
+    DOWNLOAD_URL_TEMPLATE = "https://drive.google.com/uc?export=download&id={file_id}"
+    
+    # Get Google Drive file ids
+    file_ids = mapping.loc[patch_filenames].to_list()
+
+    return [DOWNLOAD_URL_TEMPLATE.format(file_id=file_id) for file_id in file_ids]
+
+
+def download_patch(
+        patch_filename: str,
+        patch_url: str,
+        output_dir: str = "retrieval/output"
+) -> None:
+    """Download a patch from Google Drive based on its filename."""
+    # Define output path
+    outpath = os.path.join(output_dir, patch_filename)
+
+    # Download image
+    response = requests.get(patch_url)
+    if response.status_code == 200:
+        with open(outpath, "wb") as f:
+            f.write(response.content)
+        print(f"Download complete: {patch_filename}")
+    else:
+        print("Failed to download:", response.status_code)
+
+
+# def load_image_to_memory(url):
+    # try:
+        # response = requests.get(url, timeout=10)
+        # response.raise_for_status()
+        # img = Image.open(BytesIO(response.content))
+        # return (url, img)
+    # except Exception as e:
+        # print(f"❌ Failed to load {url}: {e}")
+        # return (url, None)
+
+# images = {}
+
+# with ThreadPoolExecutor(max_workers=10) as executor:
+#     futures = [executor.submit(load_image_to_memory, url) for url in image_urls]
+
+#     for future in as_completed(futures):
+#         url, img = future.result()
+#         if img:
+#             images[url] = img
+#             print(f"✅ Loaded {url} ({img.format}, {img.size})")
+
+
+def download_patches(
+        patch_filenames: list[str],
+        output_dir: str = "retrieval/output",
+        mapping_filename: list[str] = "retrieval/data/patch_name_to_drive_id_mapping.parquet",
+        num_workers: int = os.cpu_count() * 5,
+) -> None:
+    """Download patches from Google Drive with parallel execution."""
+    # Get patch urls
+    patch_urls = get_patch_urls(patch_filenames, mapping_filename)
+
+    # Download patches from Drive with parallel execution
+    shutil.rmtree(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
+
+    print("Downloading patches...")
+    with ThreadPoolExecutor(max_workers=num_workers) as executor:
+        futures = {executor.submit(download_patch, filename, url, output_dir): url for filename, url in zip(patch_filenames, patch_urls)}
+
+        # for future in as_completed(futures):
+        #     print(future.result())
+
+
+if __name__ == "__main__":
+
+    # Test values
+    PATCH_FILENAMES = [
+        "TCGA-2H-A9GK-01Z-00-DX1_(5069,60831).jpg",
+        "TCGA-2H-A9GF-01Z-00-DX1_(5069,59817).jpg",
+        "TCGA-2H-A9GF-01Z-00-DX1_(5069,58803).jpg",
+        "TCGA-2H-A9GF-01Z-00-DX1_(5069,61845).jpg",
+        "TCGA-2H-A9GF-01Z-00-DX1_(5069,62859).jpg",
+        "TCGA-2H-A9GF-01Z-00-DX1_(6083,53734).jpg",
+        "TCGA-2H-A9GF-01Z-00-DX1_(6083,54748).jpg",
+        "TCGA-2H-A9GF-01Z-00-DX1_(6083,55762).jpg",
+        "TCGA-2H-A9GF-01Z-00-DX1_(6083,56776).jpg",
+        "TCGA-2H-A9GF-01Z-00-DX1_(6083,57790).jpg",
+    ]
+
+    OUTDIR = "retrieval/output"
+
+    download_patches(PATCH_FILENAMES)
