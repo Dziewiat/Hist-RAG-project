@@ -11,7 +11,7 @@ if __name__ == "__main__":
 
     # Default variables
     INDEX_FILEPATH = "faiss_search/faiss_indecies/uni2h_index.faiss"
-    IMG_PATH = "embeddings/TCGA-2H-A9GK-01Z-00-DX1_(5069,60831).jpg"
+    IMG_PATH = "embeddings/TCGA-D5-6927-01Z-00-DX1_(1015,11174).jpg"
 
     N_PATIENTS = 5
     N_PATCHES = 5
@@ -42,4 +42,4 @@ if __name__ == "__main__":
     # print(f"Top {N_PATIENTS*N_PATCHES} patient patches similar to the query:\n")
     # print(results.patch_filename)
 
-    # download_patches(search_results.patch_filename)
+    download_patches(search_results.patch_filename)
