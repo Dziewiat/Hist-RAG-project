@@ -23,11 +23,11 @@ if __name__ == "__main__":
     }
     # FILTERS = None
 
-    # Get filtered patient metadata
-    patient_metadata, patch_metadata = get_metadata(FILTERS)
-
     # Get query patch embedding
     query_vec = get_UNI2h_patch_embedding(IMG_PATH)
+
+    # Get filtered patient metadata
+    patient_metadata, patch_metadata = get_metadata(FILTERS)
 
     # Get most similar patches to the query and their metadata
     search_results = get_most_similar_patches(
