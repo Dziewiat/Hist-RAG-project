@@ -6,3 +6,5 @@ models/UNI2-h
 __pycache__
 *.bin
 *.db
+.venv
+.env
