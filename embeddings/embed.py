@@ -62,11 +62,21 @@ def load_UNI2h() -> torch.nn.Module:
 
 def get_UNI2h_patch_embedding(
         img_path: str,
+        model: torch.nn.Module = None,
+        transform = None
 ) -> np.array:
     """
     Transform a patch into an embedding vector using UNI2-h model.
+    
+    Args:
+        img_path: Path to the image file
+        model: Pre-loaded UNI2-h model (if None, will load model)
+        transform: Pre-loaded transform (if None, will load transform)
     """
-    model, transform = load_UNI2h()
+    # Load model if not provided (for backward compatibility)
+    if model is None or transform is None:
+        model, transform = load_UNI2h()
+    
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     print("Creating query image embedding...")

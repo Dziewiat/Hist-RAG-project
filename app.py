@@ -6,7 +6,7 @@ import shutil
 import tempfile
 from PIL import Image
 
-from embeddings.embed import get_UNI2h_patch_embedding
+from embeddings.embed import get_UNI2h_patch_embedding, load_UNI2h
 from faiss_search.search import get_most_similar_patches
 from retrieval.context import merge_patch_context
 from metadata.utils import get_metadata
@@ -16,6 +16,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # Global variables
 INDEX_FILEPATH = "faiss_search/faiss_indecies/uni2h_index.faiss"
 OUTPUT_DIR = "retrieval/output"
+
+# Load model once at startup
+print("🚀 Loading UNI2-h model at startup...")
+MODEL, TRANSFORM = load_UNI2h()
+print("✅ Model loaded and ready!")
 
 
 def process_image_query(
@@ -67,7 +72,7 @@ def process_image_query(
         
         # Get query patch embedding
         status += "🧬 Creating image embedding...\n"
-        query_vec = get_UNI2h_patch_embedding(img_path)
+        query_vec = get_UNI2h_patch_embedding(img_path, model=MODEL, transform=TRANSFORM)
         status += "✓ Embedding created\n"
         
         # Get most similar patches

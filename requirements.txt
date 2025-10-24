@@ -4,3 +4,5 @@ timm
 gradio
 pillow
 requests
+pyarrow
+h5py
