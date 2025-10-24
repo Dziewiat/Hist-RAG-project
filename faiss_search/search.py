@@ -47,7 +47,7 @@ def get_most_similar_patches(
         n_patients: int = 5,
         n_patches: int = 5,
         index_filepath: str = "faiss_search/faiss_indecies/uni2h_index.faiss",
-        filtered: bool = True,
+        # filtered: bool = True,
 ) -> pd.DataFrame:
     """Search faiss iteratively excluding top patients. User can choose number of top patients and number of patches per patient."""
     # Load pregenerated faiss index
@@ -55,9 +55,10 @@ def get_most_similar_patches(
     index = faiss.read_index(index_filepath)
 
     # In case of filtering prepare a subset of indecies for prefiltering the faiss index
-    subset = None
-    if filtered:
-        subset = patch_metadata.faiss_index.to_list()
+    subset = patch_metadata.faiss_index.to_list()
+    # subset = None
+    # if filtered:
+    #     subset = patch_metadata.faiss_index.to_list()
 
     # Initiate indices collection
     all_indices = []
@@ -71,8 +72,6 @@ def get_most_similar_patches(
     for _ in range(n_patients):
         # Perform similarity search within the faiss index
         print(f"Searching faiss for patient {i+1}...")
-        if not subset:
-            break
         indices, distances = search_faiss(query_vec, index, k=n_patches, subset=subset)
 
         all_indices.extend(indices)
@@ -90,9 +89,9 @@ def get_most_similar_patches(
 
         # Create new subset without excluded patients
         subset = search_metadata.faiss_index.to_list()
-
-        # Break when no more similar patients are found or max amount of patients was found
-        if -1 in indices or len(patients) >= n_patients:
+    
+        # Break when no more similar patients are found, max amount of patients was found or there are no more available patients
+        if -1 in indices or len(patients) >= n_patients or not subset:
             break
     
     print(f"Found {len(patients)} patients")

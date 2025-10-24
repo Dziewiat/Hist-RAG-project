@@ -3,7 +3,7 @@ import os
 import pandas as pd
 import numpy as np
 
-from download import download_patches
+from retrieval.fetch import download_patches, load_patches_to_RAM
 from PIL import Image
 
 
@@ -14,6 +14,7 @@ def get_patch_context(
         tile_size: int = 1014,
 ) -> list[str]:
     """Get nearest context images metadata of a given patch."""
+    print(f"Getting context of {patch_filename}...")
     x, y = re.search(r'\((\d+),(\d+)\)', patch_filename).groups()
     x, y = int(x), int(y)
 
@@ -23,7 +24,7 @@ def get_patch_context(
     context_df = patch_metadata.copy().loc[patch_metadata.slide == slide]
     context_df["x_diff"] = (x - context_df["patch_coord_x"]).abs()
     context_df["y_diff"] = (y - context_df["patch_coord_y"]).abs()
-    context_df["xy_dist"] = (context_df["x_diff"] ** 2 + context_df["y_diff"] **2) ** 1/2
+    context_df["xy_dist"] = (context_df["x_diff"] ** 2 + context_df["y_diff"] ** 2) ** 1/2
 
     context_df.sort_values("xy_dist", inplace=True)
 
@@ -39,19 +40,30 @@ def get_patch_context(
     return top_k_nearest
 
 
-def merge_patch_context(
-        patch_context,
-        context_size: int = 1,
-        tile_size:int = 1014,
-        bg_color=(255, 255, 255),
-):
-    """
+class PatchContext:
+    pass
 
+
+def merge_patch_context(
+        patch_filename: str,
+        patch_metadata: pd.DataFrame,
+        context_size: int = 1,
+        bg_color=(255, 255, 255),
+) -> tuple[str, PatchContext]:
     """
+    Merge patch with its nearest context.
+    """
+    # Get patch context metadata
+    patch_context = get_patch_context(patch_filename, patch_metadata, context_size)
+
+    # Load context patches from drive
+    context_patches = load_patches_to_RAM(patch_context.patch_filename)
+
+    print(f"Merging context of {patch_filename}...")
     # Load all images
     imgs = [
         (
-            Image.open(os.path.join("retrieval/output", row["patch_filename"])).convert("RGBA"),
+            context_patches[row.patch_filename].convert("RGBA"),
             row["x_pos"] + context_size,
             row["y_pos"] + context_size,
         )
@@ -60,7 +72,6 @@ def merge_patch_context(
 
     # Use any image to determine width/height
     w, h = imgs[0][0].size
-    print(w,h)
 
     # Create canvas: 3×3 grid
     grid_w, grid_h = (2*context_size+1) * w, (2*context_size+1) * h
@@ -71,7 +82,7 @@ def merge_patch_context(
         x, y = int(x * w), int(y * h)
         canvas.paste(img, (x, y), img)
 
-    return canvas.convert("RGB")
+    return (patch_filename, canvas.convert("RGB"))
 
 
 if __name__ == "__main__":

@@ -2,13 +2,15 @@ import gradio as gr
 import numpy as np
 import pandas as pd
 import os
+import shutil
 import tempfile
 from PIL import Image
 
 from embeddings.embed import get_UNI2h_patch_embedding
 from faiss_search.search import get_most_similar_patches
-from retrieval.download import download_patches
+from retrieval.context import merge_patch_context
 from metadata.utils import get_metadata
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 # Global variables
@@ -21,7 +23,8 @@ def process_image_query(
     n_patients,
     n_patches,
     organ_filter,
-    gender_filter
+    gender_filter,
+    context_size: int = 1,
 ):
     """
     Process uploaded image and return similar patches.
@@ -43,6 +46,10 @@ def process_image_query(
         with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp_file:
             image.save(tmp_file.name)
             img_path = tmp_file.name
+
+        # Reset output directory
+        shutil.rmtree(OUTPUT_DIR)
+        os.makedirs(OUTPUT_DIR)
         
         # Build filters dictionary
         filters = {}
@@ -71,18 +78,24 @@ def process_image_query(
             patch_metadata=patch_metadata,
             n_patients=n_patients,
             n_patches=n_patches,
-            filtered=(True if filters else False)
+            # filtered=(True if filters else False)
         )
         status += f"✓ Found {len(search_results)} similar patches\n"
         
-        # Download matched patches
-        status += "⬇️ Downloading matched patches...\n"
-        download_patches(search_results.patch_filename.to_list())
+        # Download patches with their context
+        status += "⬇️ Downloading and merging matched patches and their context...\n"
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            futures = [executor.submit(merge_patch_context, filename, patch_metadata, context_size) for filename in search_results.patch_filename]
+
+            for future in as_completed(futures):
+                filename, img = future.result()
+                name, ext = os.path.splitext(filename)
+                img.save(os.path.join(OUTPUT_DIR, f"{name}_context{ext}"))
         status += "✓ Download complete\n"
-        
-        # Prepare gallery images
+
+        # # Prepare gallery images
         gallery_images = []
-        for filename in search_results.patch_filename.to_list():
+        for filename in os.listdir(OUTPUT_DIR):
             img_path = os.path.join(OUTPUT_DIR, filename)
             if os.path.exists(img_path):
                 gallery_images.append(img_path)
@@ -148,6 +161,15 @@ with gr.Blocks(title="Histopathology Image Retrieval", theme=gr.themes.Soft()) a
                 label="Patches per Patient",
                 info="Number of patches per patient"
             )
+
+            context_size = gr.Slider(
+                minimum=0,
+                maximum=3,
+                value=1,
+                step=1,
+                label="Context Size",
+                info="Number of surrounding patch layers to display"
+            )
             
             gr.Markdown("### 🔍 Filters (Optional)")
             organ_filter = gr.CheckboxGroup(
@@ -201,14 +223,14 @@ with gr.Blocks(title="Histopathology Image Retrieval", theme=gr.themes.Soft()) a
                 ["MALE"]
             ]
         ],
-        inputs=[image_input, n_patients, n_patches, organ_filter, gender_filter],
+        inputs=[image_input, n_patients, n_patches, organ_filter, gender_filter, context_size],
         label="Try this example"
     )
     
     # Connect the button
     search_btn.click(
         fn=process_image_query,
-        inputs=[image_input, n_patients, n_patches, organ_filter, gender_filter],
+        inputs=[image_input, n_patients, n_patches, organ_filter, gender_filter, context_size],
         outputs=[gallery_output, dataframe_output, status_output]
     )
     

@@ -5,31 +5,8 @@ import shutil
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import BytesIO
-
-
-def get_filename_to_id_mapping(
-        mapping_filename: str = "retrieval/data/patch_name_to_drive_id_mapping.parquet"
-) -> pd.Series:
-    """Load patch name to Google Drive file id mapping as pd.Series."""
-    mapping = pd.read_parquet(mapping_filename).set_index("filename")
-    return mapping["file_id"]
-
-
-def get_patch_urls(
-        patch_filenames: list[str],
-        mapping_filename: str = "retrieval/data/patch_name_to_drive_id_mapping.parquet"
-) -> list[str]:
-    """Fucntion returning an URL to download a patch from the database based on patch_filename."""
-    # Get filename to Google Drive ID mapping
-    mapping = get_filename_to_id_mapping(mapping_filename)
-
-    # Template for downloading a photo from Google Drive
-    DOWNLOAD_URL_TEMPLATE = "https://drive.google.com/uc?export=download&id={file_id}"
-    
-    # Get Google Drive file ids
-    file_ids = mapping.loc[patch_filenames].to_list()
-
-    return [DOWNLOAD_URL_TEMPLATE.format(file_id=file_id) for file_id in file_ids]
+from PIL import Image
+from retrieval.utils import get_patch_urls
 
 
 def download_patch(
@@ -49,28 +26,6 @@ def download_patch(
         print(f"Download complete: {patch_filename}")
     else:
         print("Failed to download:", response.status_code)
-
-
-# def load_image_to_memory(url):
-    # try:
-        # response = requests.get(url, timeout=10)
-        # response.raise_for_status()
-        # img = Image.open(BytesIO(response.content))
-        # return (url, img)
-    # except Exception as e:
-        # print(f"❌ Failed to load {url}: {e}")
-        # return (url, None)
-
-# images = {}
-
-# with ThreadPoolExecutor(max_workers=10) as executor:
-#     futures = [executor.submit(load_image_to_memory, url) for url in image_urls]
-
-#     for future in as_completed(futures):
-#         url, img = future.result()
-#         if img:
-#             images[url] = img
-#             print(f"✅ Loaded {url} ({img.format}, {img.size})")
 
 
 def download_patches(
@@ -95,6 +50,50 @@ def download_patches(
         #     print(future.result())
 
 
+class Patch:
+    pass
+
+
+def load_patch_to_RAM(
+        patch_url: str,
+        patch_filename: str,
+) -> tuple[str, Patch]:
+    """Load a patch form google drive to RAM."""
+    try:
+        response = requests.get(patch_url, timeout=10)
+        response.raise_for_status()
+        img = Image.open(BytesIO(response.content))
+        return (patch_filename, img)
+    except Exception as e:
+        print(f"❌ Failed to load {patch_url}: {e}")
+        return (patch_filename, None)
+
+
+
+def load_patches_to_RAM(
+        patch_filenames: list[str],
+        mapping_filename: list[str] = "retrieval/data/patch_name_to_drive_id_mapping.parquet",
+        num_workers: int = os.cpu_count() * 5,
+) -> dict[str: Patch]:
+    """Load a list of patches from Google Drive to RAM."""
+    # Get patch urls
+    patch_urls = get_patch_urls(patch_filenames, mapping_filename)
+
+    patches = {}
+
+    print("Loading patches form Drive...")
+    with ThreadPoolExecutor(max_workers=num_workers) as executor:
+        futures = [executor.submit(load_patch_to_RAM, url, filename) for url, filename in patch_urls.items()]
+
+        for future in as_completed(futures):
+            filename, img = future.result()
+            if img:
+                patches[filename] = img
+                print(f"✅ Loaded {filename} ({img.format}, {img.size})")
+
+    return patches
+
+
 if __name__ == "__main__":
 
     # Test values
@@ -113,4 +112,6 @@ if __name__ == "__main__":
 
     OUTDIR = "retrieval/output"
 
-    download_patches(PATCH_FILENAMES)
+    # download_patches(PATCH_FILENAMES)
+    patches = load_patches_to_RAM(PATCH_FILENAMES)
+    print(patches)
