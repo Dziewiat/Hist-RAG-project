@@ -98,7 +98,7 @@ def process_image_query(
         
         # Download patches with their context
         status += "⬇️ Downloading and merging matched patches and their context...\n"
-        with ThreadPoolExecutor(max_workers=4) as executor:
+        with ThreadPoolExecutor(max_workers=8) as executor:
             futures = [executor.submit(merge_patch_context, filename, patch_metadata, context_size) for filename in search_results.patch_filename]
 
             for future in as_completed(futures):

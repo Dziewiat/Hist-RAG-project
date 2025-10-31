@@ -3,7 +3,8 @@ import os
 import pandas as pd
 import numpy as np
 
-from retrieval.fetch import download_patches, load_patches_to_RAM
+from retrieval.fetch import download_patches, load_patches_to_RAM, load_patch_to_RAM
+from retrieval.utils import get_patch_urls
 from PIL import Image
 
 
@@ -35,7 +36,11 @@ def get_patch_context(
     top_k_nearest["x_pos"] = ((top_k_nearest["patch_coord_x"] - x) / tile_size).apply(np.round)
     top_k_nearest["y_pos"] = ((top_k_nearest["patch_coord_y"] - y) / tile_size).apply(np.round)
 
-    top_k_nearest = top_k_nearest.loc[(top_k_nearest.x_pos.abs() <= context_size) & (top_k_nearest.y_pos.abs() <= context_size)]
+    top_k_nearest = top_k_nearest.loc[(top_k_nearest.x_pos.abs() <= context_size) & (top_k_nearest.y_pos.abs() <= context_size)].reset_index()
+
+    # Add URLs to patches
+    patch_urls = get_patch_urls(top_k_nearest.patch_filename)
+    top_k_nearest["patch_url"] = top_k_nearest.patch_filename.map(patch_urls)
 
     return top_k_nearest
 
@@ -56,29 +61,23 @@ def merge_patch_context(
     # Get patch context metadata
     patch_context = get_patch_context(patch_filename, patch_metadata, context_size)
 
-    # Load context patches from drive
-    context_patches = load_patches_to_RAM(patch_context.patch_filename)
-
     print(f"Merging context of {patch_filename}...")
-    # Load all images
-    imgs = [
-        (
-            context_patches[row.patch_filename].convert("RGBA"),
-            row["x_pos"] + context_size,
-            row["y_pos"] + context_size,
-        )
-        for i, row in patch_context.iterrows()
-    ]
 
-    # Use any image to determine width/height
-    w, h = imgs[0][0].size
+    # Sequentially get images and paste them onto the canvas
+    for i, row in patch_context.iterrows():
+        name, img = load_patch_to_RAM(row.patch_url, row.patch_filename)
+        img = img.convert("RGBA")
+        x, y = row["x_pos"] + context_size, row["y_pos"] + context_size
 
-    # Create canvas: 3×3 grid
-    grid_w, grid_h = (2*context_size+1) * w, (2*context_size+1) * h
-    canvas = Image.new("RGBA", (grid_w, grid_h), bg_color)
+        if i == 0:
+            # Use first image to determine width/height
+            w, h = img.size
 
-    # Paste each image at its relative position
-    for img, x, y in imgs:
+            # Create canvas: 3×3 grid
+            grid_w, grid_h = (2*context_size+1) * w, (2*context_size+1) * h
+            canvas = Image.new("RGBA", (grid_w, grid_h), bg_color)
+
+        # Paste each image at its relative position
         x, y = int(x * w), int(y * h)
         canvas.paste(img, (x, y), img)
 

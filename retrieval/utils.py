@@ -23,4 +23,4 @@ def get_patch_urls(
     # Get Google Drive file ids
     file_ids = mapping.loc[patch_filenames].to_list()
 
-    return {DOWNLOAD_URL_TEMPLATE.format(file_id=file_id): filename for file_id, filename in zip(file_ids, patch_filenames)}
+    return {filename: DOWNLOAD_URL_TEMPLATE.format(file_id=file_id) for filename, file_id in zip(patch_filenames, file_ids)}
