@@ -77,7 +77,7 @@ def get_metadata(  # BEST FOR NOW
 
     # Filter patient metadata
     print("Filtering patient metadata...")
-    patient_metadata = pd.read_csv("metadata/liu.csv")
+    patient_metadata = pd.read_parquet("metadata/patient_metadata.parquet")
     if filters:
         patient_metadata = patient_metadata.loc[patient_metadata.isin(filters).sum(axis=1) == len(filters)]
     patient_ids = patient_metadata["TCGA Participant Barcode"].to_list()
@@ -88,3 +88,40 @@ def get_metadata(  # BEST FOR NOW
     patch_metadata = patch_metadata[patch_metadata.patient_id.isin(patient_ids)]
     
     return patient_metadata, patch_metadata
+
+
+def create_metadata_filter(
+        project_filter: list[str],
+        organ_filter: list[str],
+        stage_filter: list[str],
+        gender_filter: list[str],
+        vital_status_filter: list[str],
+        anatomic_region_filter: list[str],
+        msi_status_filter: list[str],
+        mutational_signature_filter: list[str],
+) -> dict[str: list[str]]:
+    """Create filter dict for metadata from user-chosen option lists."""
+    filters = {}
+
+    if project_filter:
+        filters["TCGA Project Code"] = project_filter
+    if organ_filter:
+        filters["Organ"] = organ_filter
+    if stage_filter:
+        filters["Stage"] = stage_filter
+    if gender_filter:
+        filters["Gender"] = gender_filter
+    if vital_status_filter:
+        filters["Vital status"] = vital_status_filter
+    if anatomic_region_filter:
+        filters["Anatomic Region"] = anatomic_region_filter
+    if msi_status_filter:
+        filters["MSI Status"] = msi_status_filter
+    if mutational_signature_filter:
+        for sig in mutational_signature_filter:
+            filters[sig] = [1]
+
+    if len(filters) == 0:
+        return None
+    else:
+        return filters
