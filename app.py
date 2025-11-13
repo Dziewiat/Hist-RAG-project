@@ -9,7 +9,7 @@ from PIL import Image
 from embeddings.embed import get_UNI2h_patch_embedding, load_UNI2h
 from faiss_search.search import get_most_similar_patches
 from retrieval.context import merge_patch_context
-from metadata.utils import get_metadata
+from metadata.utils import get_metadata, create_metadata_filter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
@@ -25,10 +25,16 @@ print("✅ Model loaded and ready!")
 
 def process_image_query(
     image,
-    n_patients,
-    n_patches,
-    organ_filter,
-    gender_filter,
+    n_patients: int,
+    n_patches: int,
+    project_filter: list[str],
+    organ_filter: list[str],
+    stage_filter: list[str],
+    gender_filter: list[str],
+    vital_status_filter: list[str],
+    anatomic_region_filter: list[str],
+    msi_status_filter: list[str],
+    mutational_signature_filter: list[str],
     context_size: int = 1,
 ):
     """
@@ -57,13 +63,16 @@ def process_image_query(
         os.makedirs(OUTPUT_DIR)
         
         # Build filters dictionary
-        filters = {}
-        if organ_filter:
-            filters["Organ"] = organ_filter
-        if gender_filter:
-            filters["Gender"] = gender_filter
-        
-        filters = filters if filters else None
+        filters = create_metadata_filter(
+            project_filter=project_filter,
+            organ_filter=organ_filter,
+            stage_filter=stage_filter,
+            gender_filter=gender_filter,
+            vital_status_filter=vital_status_filter,
+            anatomic_region_filter=anatomic_region_filter,
+            msi_status_filter=msi_status_filter,
+            mutational_signature_filter=mutational_signature_filter,
+        )
         
         # Get filtered patient metadata
         status = "📊 Loading metadata...\n"
@@ -111,7 +120,7 @@ def process_image_query(
                 gallery_images.append(img_path)
         
         # Prepare results dataframe for display
-        display_columns = ['patch_filename', 'score', 'patient_id', 'Gender', 'Organ']
+        display_columns = ['patch_filename', 'score', 'patient_id'] + list(filters.keys())
         available_columns = [col for col in display_columns if col in search_results.columns]
         results_display = search_results[available_columns].copy()
         results_display['score'] = results_display['score'].round(4)
@@ -130,8 +139,20 @@ def process_image_query(
 
 
 # Available filter options
-ORGAN_OPTIONS = ["Esophageal", "COAD", "READ", "STAD", "ESCA"]
+PROJECT_OPTIONS = ['ESCA', 'COAD', 'STAD', 'READ']
+ORGAN_OPTIONS = ['Esophageal', 'COAD', 'Gastric', 'READ']
+STAGE_OPTIONS = ['I', 'II', 'III', 'IV']
+# COUNTRY_OPTIONS = ['Netherlands', 'United_States', 'Brazil', 'Germany', 'Russia', 'Ukraine',
+#                    'Vietnam', 'Poland', 'Israel', 'Canada', 'Korea_South', 'Australia', 'Moldova', 'United_Kingdom']
 GENDER_OPTIONS = ["MALE", "FEMALE"]
+VITAL_STATUS_OPTIONS = ['Dead', 'Alive']
+ANATOMIC_REGION_OPTIONS = ['Esophagus', 'Ascending_Colon', 'Gastric_Fundus_and_Body',
+ 'Descending_Colon', 'Transverse_Colon', 'Rectum',
+ 'Gastric_Antrum_and_Pylorus', 'Gastroesophageal_Junction',
+ 'Proximal_Stomach']
+MSI_STATUS_OPTIONS = ['MSI-L', 'MSS', 'MSI-H']
+MUTATIONAL_SIGNATURE_OPTIONS = ["SBS1","SBS2","SBS3","SBS5","SBS6","SBS10a","SBS10b","SBS13","SBS15",
+                                "SBS17a","SBS17b","SBS18","SBS20","SBS21","SBS28","SBS29","SBS40a"]
 
 
 # Create Gradio interface
@@ -146,6 +167,7 @@ with gr.Blocks(title="Histopathology Image Retrieval", theme=gr.themes.Soft()) a
     
     with gr.Row():
         with gr.Column(scale=1):
+            # Image upload
             gr.Markdown("### 📤 Upload Query Image")
             image_input = gr.Image(
                 type="pil",
@@ -153,6 +175,7 @@ with gr.Blocks(title="Histopathology Image Retrieval", theme=gr.themes.Soft()) a
                 height=300
             )
             
+            # Search parameters
             gr.Markdown("### ⚙️ Search Parameters")
             n_patients = gr.Slider(
                 minimum=1,
@@ -180,12 +203,25 @@ with gr.Blocks(title="Histopathology Image Retrieval", theme=gr.themes.Soft()) a
                 label="Context Size",
                 info="Number of surrounding patch layers to display"
             )
-            
+
+            # Filter choice
             gr.Markdown("### 🔍 Filters (Optional)")
+            project_filter = gr.CheckboxGroup(
+                choices=PROJECT_OPTIONS,
+                label="TCGA Project Code",
+                info="Filter by TCGA Project"
+            )
+
             organ_filter = gr.CheckboxGroup(
                 choices=ORGAN_OPTIONS,
                 label="Organ Type",
                 info="Filter by organ type"
+            )
+
+            stage_filter = gr.CheckboxGroup(
+                choices=STAGE_OPTIONS,
+                label="Pathologic stage",
+                info="Filter by pathologic stage"
             )
             
             gender_filter = gr.CheckboxGroup(
@@ -193,7 +229,32 @@ with gr.Blocks(title="Histopathology Image Retrieval", theme=gr.themes.Soft()) a
                 label="Gender",
                 info="Filter by patient gender"
             )
+
+            vital_status_filter = gr.CheckboxGroup(
+                choices=VITAL_STATUS_OPTIONS,
+                label="Vital status",
+                info="Filter by vital status"
+            )
+
+            anatomic_region_filter = gr.CheckboxGroup(
+                choices=ANATOMIC_REGION_OPTIONS,
+                label="Anatomic Region",
+                info="Filter by specific anatomi region"
+            )
+
+            msi_status_filter = gr.CheckboxGroup(
+                choices=MSI_STATUS_OPTIONS,
+                label="MSI Status",
+                info="Filter by patient MSI Status"
+            )
+
+            mutational_signature_filter = gr.CheckboxGroup(
+                choices=MUTATIONAL_SIGNATURE_OPTIONS,
+                label="Mutational Signatures",
+                info="Filter by Mutational Signature Activity (etiology)"
+            )
             
+            # Search button
             search_btn = gr.Button("🔍 Search Similar Patches", variant="primary", size="lg")
             
             status_output = gr.Textbox(
@@ -229,18 +290,42 @@ with gr.Blocks(title="Histopathology Image Retrieval", theme=gr.themes.Soft()) a
                 "embeddings/TCGA-D5-6927-01Z-00-DX1_(1015,11174).jpg",
                 5,
                 5,
+                [],
                 ["Esophageal", "COAD"],
-                ["MALE"]
+                [],
+                ["MALE"],
+                [],
+                [],
+                [],
+                [],
             ]
         ],
-        inputs=[image_input, n_patients, n_patches, organ_filter, gender_filter, context_size],
+        inputs=[image_input, n_patients, n_patches,
+        project_filter,
+        organ_filter,
+        stage_filter,
+        gender_filter,
+        vital_status_filter,
+        anatomic_region_filter,
+        msi_status_filter,
+        mutational_signature_filter,
+        context_size],
         label="Try this example"
     )
     
     # Connect the button
     search_btn.click(
         fn=process_image_query,
-        inputs=[image_input, n_patients, n_patches, organ_filter, gender_filter, context_size],
+        inputs=[image_input, n_patients, n_patches,
+        project_filter,
+        organ_filter,
+        stage_filter,
+        gender_filter,
+        vital_status_filter,
+        anatomic_region_filter,
+        msi_status_filter,
+        mutational_signature_filter,
+        context_size],
         outputs=[gallery_output, dataframe_output, status_output]
     )
     

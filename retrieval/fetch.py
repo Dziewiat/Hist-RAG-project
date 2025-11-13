@@ -63,6 +63,7 @@ def load_patch_to_RAM(
         response = requests.get(patch_url, timeout=10)
         response.raise_for_status()
         img = Image.open(BytesIO(response.content))
+        print(f"✅ Loaded {patch_filename} ({img.format}, {img.size})")
         return (patch_filename, img)
     except Exception as e:
         print(f"❌ Failed to load {patch_url}: {e}")

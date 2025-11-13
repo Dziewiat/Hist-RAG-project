@@ -81,8 +81,7 @@ def get_most_similar_patches(
         patch_metadata: pd.DataFrame,
         n_patients: int = 5,
         n_patches: int = 5,
-        index_filepath: str = "faiss_search/faiss_indecies/uni2h_bruteforce_index_10_patients.faiss",
-        # filtered: bool = True,
+        index_filepath: str = "faiss_search/faiss_indecies/uni2h_index.faiss",
 ) -> pd.DataFrame:
     """Search faiss iteratively excluding top patients. User can choose number of top patients and number of patches per patient."""
     # Load pregenerated faiss index
