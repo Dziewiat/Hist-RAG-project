@@ -57,17 +57,22 @@ class Patch:
 def load_patch_to_RAM(
         patch_url: str,
         patch_filename: str,
+        max_retries: int = 3,
 ) -> tuple[str, Patch]:
     """Load a patch form google drive to RAM."""
-    try:
-        response = requests.get(patch_url, timeout=10)
-        response.raise_for_status()
-        img = Image.open(BytesIO(response.content))
-        print(f"✅ Loaded {patch_filename} ({img.format}, {img.size})")
-        return (patch_filename, img)
-    except Exception as e:
-        print(f"❌ Failed to load {patch_url}: {e}")
-        return (patch_filename, None)
+    for i in range(max_retries):
+        try:
+            response = requests.get(patch_url, timeout=10)
+            response.raise_for_status()
+            img = Image.open(BytesIO(response.content))
+            print(f"✅ Loaded {patch_filename} ({img.format}, {img.size})")
+            return (patch_filename, img)
+        except Exception as e:
+            print(f"❌ Failed to load {patch_filename}: {e}")
+            # return (patch_filename, None)
+            print(f"Retry loading {patch_filename}: attempt {i+1}...")
+        
+    raise Exception(f"Max number of retries ({max_retries}) reached for loading {patch_filename}! Check your internet connection or try in a few minutes.")
 
 
 

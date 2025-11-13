@@ -92,20 +92,20 @@ def process_image_query(
             patch_metadata=patch_metadata,
             n_patients=n_patients,
             n_patches=n_patches,
-            # filtered=(True if filters else False)
         )
         status += f"✓ Found {len(search_results)} similar patches\n"
-        
-        # Download patches with their context
-        status += "⬇️ Downloading and merging matched patches and their context...\n"
-        with ThreadPoolExecutor(max_workers=8) as executor:
-            futures = [executor.submit(merge_patch_context, filename, patch_metadata, context_size) for filename in search_results.patch_filename]
 
-            for future in as_completed(futures):
-                filename, img = future.result()
-                name, ext = os.path.splitext(filename)
-                img.save(os.path.join(OUTPUT_DIR, f"{name}_context{ext}"))
-        status += "✓ Download complete\n"
+        if len(search_results) > 0:
+            # Download patches with their context
+            status += "⬇️ Downloading and merging matched patches and their context...\n"
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                futures = [executor.submit(merge_patch_context, filename, patch_metadata, context_size) for filename in search_results.patch_filename]
+
+                for future in as_completed(futures):
+                    filename, img = future.result()
+                    name, ext = os.path.splitext(filename)
+                    img.save(os.path.join(OUTPUT_DIR, f"{name}_context{ext}"))
+            status += "✓ Download complete\n"            
 
         # # Prepare gallery images
         gallery_images = []
