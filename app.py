@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 # Global variables
-INDEX_FILEPATH = "faiss_search/faiss_indecies/uni2h_index.faiss"
+INDEX_FILEPATH = "faiss_search/faiss_indecies/uni2h_bruteforce_index_10_patients.faiss"
 OUTPUT_DIR = "retrieval/output"
 
 # Load model once at startup
@@ -94,6 +94,16 @@ def process_image_query(
             n_patches=n_patches,
         )
         status += f"✓ Found {len(search_results)} similar patches\n"
+        
+        # Download patches with their context
+        status += "⬇️ Downloading and merging matched patches and their context...\n"
+        processed_patches = set()  # Track processed patches to avoid duplicates
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            futures = []
+            for filename in search_results.patch_filename:
+                if filename not in processed_patches:
+                    processed_patches.add(filename)
+                    futures.append(executor.submit(merge_patch_context, filename, patch_metadata, context_size))
 
         if len(search_results) > 0:
             # Download patches with their context

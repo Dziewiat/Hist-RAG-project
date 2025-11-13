@@ -35,6 +35,41 @@ def search_faiss(
     return indices, distances
 
 
+def search_faiss_bruteforce(
+        query_vector: np.array,
+        index: faiss.IndexFlat,
+        k: int = 5,
+        subset: None | list[int] = None,
+):
+    """
+    Brute-force FAISS search with optional subset filtering.
+    
+    Args:
+        query_vector: np.array (D,) or (1, D)
+        index: faiss.IndexFlatL2 or faiss.IndexFlatIP
+        embeddings: np.array (N, D)  # same data used to build index
+        k: number of neighbors to return
+        subset: optional list of row indices to restrict search
+    """
+
+    # Ensure query is 2D: (1, D)
+    query = query_vector.astype("float32")
+    if query.ndim == 1:
+        query = query.reshape(1, -1)
+    elif query.shape[0] != 1:
+        query = query.reshape(1, -1)
+
+    # Normalize if using cosine / inner product search
+    if isinstance(index, faiss.IndexFlatIP):
+        faiss.normalize_L2(query)
+
+    # Full brute-force search
+    distances, indices = index.search(query, k)
+    indices = indices[0]
+
+    distances = distances[0]
+    return indices, distances
+
 def get_most_similar_patches(
         query_vec: np.ndarray,
         patient_metadata: pd.DataFrame,
@@ -63,7 +98,8 @@ def get_most_similar_patches(
     for _ in range(n_patients):
         # Perform similarity search within the faiss index
         print(f"Searching faiss for patient {i+1}...")
-        indices, distances = search_faiss(query_vec, index, k=n_patches, subset=subset)
+        indices, distances = search_faiss_bruteforce(query_vec, index, k=n_patches, subset=subset)
+        print(f"Distances: {distances}")
 
         all_indices.extend(indices)
         all_distances.extend(distances)
