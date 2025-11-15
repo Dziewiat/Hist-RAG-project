@@ -69,7 +69,7 @@ def measure_execution_time(func):
 # Pandas version (in RAM search)
 @measure_execution_time
 def get_metadata(  # BEST FOR NOW
-        filters: None | dict
+        filters: dict,
 ) -> pd.DataFrame:
     """Returns filtered patient and patch metadata."""
     # Load patch metadata database
@@ -121,7 +121,4 @@ def create_metadata_filter(
         for sig in mutational_signature_filter:
             filters[sig] = [1]
 
-    if len(filters) == 0:
-        return None
-    else:
-        return filters
+    return filters

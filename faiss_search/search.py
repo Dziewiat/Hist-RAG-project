@@ -22,17 +22,12 @@ def search_faiss(
     query = query_vector.astype("float32").reshape(1, -1)
     faiss.normalize_L2(query)
 
-    # Perform similarity search for the query
-    if subset:
-        # Optional: filter the index
-        id_selector = faiss.IDSelectorArray(subset)
-        search_parameters = faiss.IVFPQSearchParameters(sel=id_selector)
-        
-        # Perform the similarity search with selected indices
-        distances, indices = index.search(query, k, params=search_parameters)
-    else:
-        # Perform the similarity search on all indices
-        distances, indices = index.search(query, k)
+    # Select filtered indices
+    id_selector = faiss.IDSelectorArray(subset)
+    search_parameters = faiss.IVFPQSearchParameters(sel=id_selector)
+    
+    # Perform the similarity search with selected indices
+    distances, indices = index.search(query, k, params=search_parameters)
 
     indices = indices[0]
     distances = distances[0]
@@ -68,12 +63,18 @@ def search_faiss_bruteforce(
     if isinstance(index, faiss.IndexFlatIP):
         faiss.normalize_L2(query)
 
-    # Full brute-force search
-    distances, indices = index.search(query, k)
-    indices = indices[0]
+    # Select filtered indices
+    id_selector = faiss.IDSelectorArray(subset)
+    search_parameters = faiss.SearchParameters(sel=id_selector)  # TODO FIX
 
+    # Full brute-force search
+    distances, indices = index.search(query, k, params=search_parameters)
+
+    indices = indices[0]
     distances = distances[0]
+
     return indices, distances
+
 
 def get_most_similar_patches(
         query_vec: np.ndarray,
@@ -90,9 +91,6 @@ def get_most_similar_patches(
 
     # In case of filtering prepare a subset of indecies for prefiltering the faiss index
     subset = patch_metadata.faiss_index.to_list()
-    # subset = None
-    # if filtered:
-    #     subset = patch_metadata.faiss_index.to_list()
 
     # Initiate indices collection
     all_indices = []
@@ -106,8 +104,8 @@ def get_most_similar_patches(
     for _ in range(n_patients):
         # Perform similarity search within the faiss index
         print(f"Searching faiss for patient {i+1}...")
-        indices, distances = search_faiss_bruteforce(query_vec, index, k=n_patches, subset=subset)
-        print(f"Distances: {distances}")
+        indices, distances = search_faiss(query_vec, index, k=n_patches, subset=subset)
+        # indices, distances = search_faiss_bruteforce(query_vec, index, k=n_patches, subset=subset)
 
         all_indices.extend(indices)
         all_distances.extend(distances)
@@ -126,7 +124,7 @@ def get_most_similar_patches(
         subset = search_metadata.faiss_index.to_list()
     
         # Break when no more similar patients are found, max amount of patients was found or there are no more available patients
-        if -1 in indices or len(patients) >= n_patients or not subset:
+        if -1 in indices or len(patients) >= n_patients or len(subset) == 0:
             break
     
     print(f"Found {len(patients)} patients")
