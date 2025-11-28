@@ -3,10 +3,10 @@ import numpy as np
 import pandas as pd
 import os
 import shutil
-import tempfile
 from PIL import Image
 
-from embeddings.embed import get_UNI2h_patch_embedding, load_UNI2h
+from models.utils import load_UNI2h
+from embeddings.embed import get_UNI2h_patch_embedding
 from faiss_search.search import get_most_similar_patches
 from retrieval.context import merge_patch_context
 from metadata.utils import get_metadata, create_metadata_filter
@@ -14,8 +14,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 # Global variables
-INDEX_FILEPATH = "faiss_search/faiss_indecies/uni2h_index.faiss"
+INDEX_FILEPATH = "faiss_search/faiss_indecies/uni2h_IndexIVFPQ.faiss"
 # INDEX_FILEPATH = "faiss_search/faiss_indecies/uni2h_bruteforce_index_10_patients.faiss"
+# INDEX_FILEPATH = "faiss_search/faiss_indecies/uni2h_IndexFlatIP_10_patients.faiss"
 OUTPUT_DIR = "retrieval/output"
 
 # Load model once at startup
@@ -25,7 +26,7 @@ print("✅ Model loaded and ready!")
 
 
 def process_image_query(
-    image,
+    img_path: str,
     n_patients: int,
     n_patches: int,
     project_filter: list[str],
@@ -37,6 +38,7 @@ def process_image_query(
     msi_status_filter: list[str],
     mutational_signature_filter: list[str],
     context_size: int = 1,
+    max_workers: int = 8,
 ):
     """
     Process uploaded image and return similar patches.
@@ -54,11 +56,6 @@ def process_image_query(
         status_text: Status message
     """
     try:
-        # Save uploaded image temporarily
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp_file:
-            image.save(tmp_file.name)
-            img_path = tmp_file.name
-
         # Reset output directory
         shutil.rmtree(OUTPUT_DIR)
         os.makedirs(OUTPUT_DIR)
@@ -93,13 +90,14 @@ def process_image_query(
             patch_metadata=patch_metadata,
             n_patients=n_patients,
             n_patches=n_patches,
+            index_filepath=INDEX_FILEPATH,
         )
         status += f"✓ Found {len(search_results)} similar patches\n"
         
         # Download patches with their context
         status += "⬇️ Downloading and merging matched patches and their context...\n"
         processed_patches = set()  # Track processed patches to avoid duplicates
-        with ThreadPoolExecutor(max_workers=8) as executor:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = []
             for filename in search_results.patch_filename:
                 if filename not in processed_patches:
@@ -111,11 +109,12 @@ def process_image_query(
                 name, ext = os.path.splitext(filename)
                 img.save(os.path.join(OUTPUT_DIR, f"{name}_context{ext}"))
         status += "✓ Download complete\n"            
-
-        # # Prepare gallery images
+        
+        # Prepare gallery images
         gallery_images = []
-        for filename in os.listdir(OUTPUT_DIR):
-            img_path = os.path.join(OUTPUT_DIR, filename)
+        for filename in search_results["patch_filename"]:
+            name, ext = os.path.splitext(filename)
+            img_path = os.path.join(OUTPUT_DIR, f"{name}_context{ext}")
             if os.path.exists(img_path):
                 gallery_images.append(img_path)
         
@@ -124,10 +123,6 @@ def process_image_query(
         available_columns = [col for col in display_columns if col in search_results.columns]
         results_display = search_results[available_columns].copy()
         results_display['score'] = results_display['score'].round(4)
-        
-        # Clean up temp file
-        if os.path.exists(tmp_file.name):
-            os.unlink(tmp_file.name)
         
         status += f"\n✅ Successfully retrieved {len(gallery_images)} images!"
         
@@ -170,7 +165,7 @@ with gr.Blocks(title="Histopathology Image Retrieval", theme=gr.themes.Soft()) a
             # Image upload
             gr.Markdown("### 📤 Upload Query Image")
             image_input = gr.Image(
-                type="pil",
+                type="filepath",
                 label="Upload Histopathology Patch (JPG)",
                 height=300
             )
@@ -202,6 +197,15 @@ with gr.Blocks(title="Histopathology Image Retrieval", theme=gr.themes.Soft()) a
                 step=1,
                 label="Context Size",
                 info="Number of surrounding patch layers to display"
+            )
+
+            max_workers = gr.Slider(
+                minimum=0,
+                maximum=min(32, (os.cpu_count() or 1) + 4),
+                value=max(8, (os.cpu_count() or 1) + 4),
+                step=1,
+                label="Max Workers",
+                info="Number of threads used for parallel processing"
             )
 
             # Filter choice
@@ -300,32 +304,38 @@ with gr.Blocks(title="Histopathology Image Retrieval", theme=gr.themes.Soft()) a
                 [],
             ]
         ],
-        inputs=[image_input, n_patients, n_patches,
-        project_filter,
-        organ_filter,
-        stage_filter,
-        gender_filter,
-        vital_status_filter,
-        anatomic_region_filter,
-        msi_status_filter,
-        mutational_signature_filter,
-        context_size],
+        inputs=[
+            image_input, n_patients, n_patches,
+            project_filter,
+            organ_filter,
+            stage_filter,
+            gender_filter,
+            vital_status_filter,
+            anatomic_region_filter,
+            msi_status_filter,
+            mutational_signature_filter,
+            context_size,
+            max_workers,
+        ],
         label="Try this example"
     )
     
     # Connect the button
     search_btn.click(
         fn=process_image_query,
-        inputs=[image_input, n_patients, n_patches,
-        project_filter,
-        organ_filter,
-        stage_filter,
-        gender_filter,
-        vital_status_filter,
-        anatomic_region_filter,
-        msi_status_filter,
-        mutational_signature_filter,
-        context_size],
+        inputs=[
+            image_input, n_patients, n_patches,
+            project_filter,
+            organ_filter,
+            stage_filter,
+            gender_filter,
+            vital_status_filter,
+            anatomic_region_filter,
+            msi_status_filter,
+            mutational_signature_filter,
+            context_size,
+            max_workers,
+        ],
         outputs=[gallery_output, dataframe_output, status_output]
     )
     
