@@ -35,3 +35,7 @@ python3 app.py
 ```
 
 Open http://localhost:7860 in your browser to access the interface.
+
+
+# Funding
+The project was financed by the Polish National Agency for Academic Exchange within the Polish Returns Programme (PPN/PPO/2020/1/00028).
